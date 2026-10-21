@@ -36,6 +36,15 @@ export default function App() {
   const [qrState, setQrState] = useState({ status: 'idle', message: '' });
   useCustomFonts(rawTemplate.fonts);
 
+  // Diseños guardados con la versión anterior: la primera imagen pasa a ser el logo.
+  useEffect(() => {
+    const els = rawTemplate.elements || [];
+    if (!els.some((e) => e.role === 'logo')) {
+      const first = els.find((e) => e.type === 'image');
+      if (first) setRawTemplate((t) => ({ ...t, elements: t.elements.map((e) => (e.id === first.id ? { ...e, role: 'logo' } : e)) }));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const settings = useMemo(() => ({
     ...DEFAULT_SETTINGS, ...rawSettings,
     emailjs: { ...DEFAULT_SETTINGS.emailjs, ...rawSettings.emailjs },
