@@ -1,0 +1,27 @@
+{
+  "name": "certifica",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node tests/smoke.mjs"
+  },
+  "dependencies": {
+    "@emailjs/browser": "^5.0.3",
+    "@pdf-lib/fontkit": "^1.1.1",
+    "jszip": "^3.10.2",
+    "papaparse": "^5.7.0",
+    "pdf-lib": "^1.17.1",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "read-excel-file": "^9.3.12"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.2",
+    "vite": "^8.3.4"
+  }
+}
