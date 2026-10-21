@@ -1,4 +1,4 @@
-# Certifica
+# Certificapp
 
 Aplicación web para emitir certificados, invitaciones académicas, cartas de aceptación y credenciales de evento, de forma individual o masiva, con verificación pública mediante código QR. Funciona íntegramente en el navegador y se publica gratis en GitHub Pages, sin servidor ni base de datos.
 
@@ -52,14 +52,13 @@ npm run build      # versión de producción en dist/
 
 La configuración usa rutas relativas (`base: './'`), por lo que funciona con cualquier nombre de repositorio y también con un dominio propio.
 
-## Ciclo de emisión y verificación
+## Uso
 
-1. Diseña la plantilla, completa los datos del evento y carga la planilla.
-2. Revisa la vista previa, en especial el nombre más largo, y emite.
-3. En **Registro**, descarga `registry.json` y reemplaza `public/registry.json` del repositorio; luego haz `commit` y `push`. Alternativamente, configura usuario y repositorio en **Ajustes** y usa **Publicar directamente en GitHub** con un token de grano fino que tenga solo el permiso *Contents: Read and write* sobre ese repositorio.
-4. Tras el despliegue (uno o dos minutos), los QR verifican.
+La aplicación es un asistente de cinco pasos pensado para personas sin conocimientos técnicos: elegir el modelo, completar los datos del evento con el logo y las firmas, ajustar el diseño (opcional), cargar la lista de personas y generar.
 
-El registro de emisión se guarda en el navegador desde el que se emite. Si trabajan varias personas o varios equipos, usa **Sincronizar con el registro publicado** antes de emitir, para incorporar lo ya publicado, y exporta el CSV completo como respaldo. Un documento puede revocarse desde el registro; al volver a publicar, el portal lo mostrará como revocado con la fecha y el motivo.
+Para que los códigos QR funcionen, la primera vez se pulsa **Activar verificación** y se sigue una guía de tres pasos que crea en GitHub una clave de acceso limitada a este repositorio (permiso *Contents: Read and write*). Desde entonces, cada vez que se generan documentos la aplicación publica sola el registro en `public/registry.json`, combinándolo con lo ya publicado desde otros computadores, y los QR verifican en uno o dos minutos. La clave se guarda solo en el navegador de quien la ingresa.
+
+El historial se guarda en el navegador desde el que se emite. En **Historial** se pueden anular documentos, descargar la lista para Excel y hacer copias de respaldo.
 
 ## Privacidad
 

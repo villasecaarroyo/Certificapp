@@ -140,3 +140,24 @@ export function allVariables(columns = [], event = {}, mapping = {}) {
   columns.forEach((c) => { if (!mapped.has(c)) push(normalizeKey(c), c, 'Columnas del archivo'); });
   return list;
 }
+
+// Etiquetas cortas para los botones «Insertar dato» del editor de textos.
+export const INSERT_CHIPS = [
+  { group: 'De cada persona', items: [
+    ['nombre', 'Nombre'], ['rut_dni', 'RUT o DNI'], ['rol', 'Rol'], ['tratamiento', 'Tratamiento (Dr., Dra.)'],
+    ['afiliacion', 'Su institución'], ['titulo_trabajo', 'Título de ponencia'], ['mesa', 'Mesa o panel'], ['duracion_horas', 'Horas'],
+  ] },
+  { group: 'Del evento', items: [
+    ['evento', 'Nombre del evento'], ['institucion', 'Institución'], ['unidad', 'Facultad o unidad'], ['fecha', 'Fecha'],
+    ['lugar', 'Lugar'], ['ciudad', 'Ciudad'], ['modalidad', 'Modalidad'],
+  ] },
+  { group: 'Automáticos', items: [
+    ['fecha_emision', 'Fecha de hoy'], ['folio', 'N.º de folio'], ['codigo', 'Código de verificación'],
+  ] },
+];
+
+const CHIP_LABEL = Object.fromEntries(INSERT_CHIPS.flatMap((g) => g.items));
+// Muestra «{{nombre}}» como «[Nombre]» para que el texto sea legible por cualquier persona.
+export function friendlyText(text) {
+  return String(text || '').replace(/\{\{\s*([A-Za-z0-9_]+)\s*(?:\|[a-z]+)?\s*\}\}/g, (m, k) => `[${CHIP_LABEL[k] || k}]`);
+}

@@ -1,310 +1,233 @@
 import { useMemo, useState } from 'react';
-import { EVENT_FIELDS, CANONICAL_FIELDS, autoMap, normalizeKey } from '../lib/fields.js';
-import { parseFile } from '../lib/data.js';
-import { PUBLIC_LEVELS, buildPublicRegistry, mergeRecords, readRegistry, recordsToCsv } from '../lib/registry.js';
-import { downloadText, publishToGitHub } from '../lib/browser.js';
-import { resolveBaseUrl, verifyUrl } from '../lib/issue.js';
+import { mergeRecords, readRegistry, recordsToCsv, buildPublicRegistry } from '../lib/registry.js';
+import { downloadText } from '../lib/browser.js';
+import { verifyUrl, resolveBaseUrl } from '../lib/issue.js';
+import { forgetToken } from '../lib/github.js';
 import { Field, FileButton } from './ui.jsx';
+import { QrStatus } from './StepGenerate.jsx';
+import { useGitHub } from './GitHubConnect.jsx';
 
-/* ───────────── Evento ───────────── */
-export function EventPanel({ event, setEvent }) {
-  const set = (k, v) => setEvent((e) => ({ ...e, [k]: v }));
-  const extra = event.extra || [];
-  const setExtra = (list) => setEvent((e) => ({ ...e, extra: list }));
-  return (
-    <section className="panel">
-      <h2>Datos de la instancia</h2>
-      <p className="lead">Estos valores son comunes a todos los documentos del lote. Si la planilla trae una columna con el mismo dato (por ejemplo, horas), prevalece el valor de cada fila.</p>
-      <div className="form-grid">
-        {EVENT_FIELDS.map((f) => (
-          <Field key={f.key} label={f.label} hint={`{{${f.key}}}`}>
-            <input value={event[f.key] || ''} onChange={(e) => set(f.key, e.target.value)} />
-          </Field>
-        ))}
-      </div>
-      <h3>Campos adicionales</h3>
-      <p className="muted">Crea variables propias para esta instancia, como resolución, código del curso o número de sesión.</p>
-      {extra.map((x, i) => (
-        <div className="row" key={i}>
-          <input placeholder="nombre_variable" value={x.key} onChange={(e) => setExtra(extra.map((y, j) => (j === i ? { ...y, key: e.target.value } : y)))} />
-          <input placeholder="valor" className="grow" value={x.value} onChange={(e) => setExtra(extra.map((y, j) => (j === i ? { ...y, value: e.target.value } : y)))} />
-          <code className="muted">{`{{${normalizeKey(x.key) || '…'}}}`}</code>
-          <button className="btn ghost small" onClick={() => setExtra(extra.filter((_, j) => j !== i))}>Quitar</button>
-        </div>
-      ))}
-      <button className="btn" onClick={() => setExtra([...extra, { key: '', value: '' }])}>Añadir campo</button>
-    </section>
-  );
-}
+const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 
-/* ───────────── Participantes ───────────── */
-export function DataPanel({ dataset, setDataset, mapping, setMapping, onView }) {
-  const [over, setOver] = useState(false);
-  const [err, setErr] = useState('');
-  const [manual, setManual] = useState({});
-  const [filter, setFilter] = useState('');
-
-  const load = async (file) => {
-    setErr('');
-    try {
-      const ds = await parseFile(file);
-      setDataset(ds);
-      setMapping(autoMap(ds.columns));
-    } catch (e) { setErr(e.message); }
-  };
-
-  const addManual = () => {
-    if (!manual.nombre?.trim()) { setErr('El nombre es obligatorio para agregar un participante.'); return; }
-    setErr('');
-    const cols = [...dataset.columns];
-    const map = { ...mapping };
-    const row = {};
-    for (const f of CANONICAL_FIELDS) {
-      const v = (manual[f.key] || '').trim();
-      if (!v && !map[f.key]) continue;
-      let col = map[f.key];
-      if (!col) { col = f.label; map[f.key] = col; }
-      if (!cols.includes(col)) cols.push(col);
-      row[col] = v;
-    }
-    setDataset({ ...dataset, columns: cols, rows: [...dataset.rows, row] });
-    setMapping(map);
-    setManual({});
-    onView(dataset.rows.length, false);
-  };
-
-  const nameCol = mapping.nombre;
-  const visible = useMemo(() => dataset.rows.map((r, i) => [r, i]).filter(([r]) =>
-    !filter || Object.values(r).some((v) => String(v).toLowerCase().includes(filter.toLowerCase()))).slice(0, 300), [dataset.rows, filter]);
-  const missingName = nameCol ? dataset.rows.filter((r) => !String(r[nameCol] || '').trim()).length : dataset.rows.length;
-
-  return (
-    <section className="panel">
-      <h2>Participantes</h2>
-      <div className={`dropzone${over ? ' over' : ''}`}
-        onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-        onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) load(f); }}>
-        <p><strong>Arrastra aquí una planilla CSV o Excel (.xlsx)</strong></p>
-        <p className="muted">La primera fila debe contener los encabezados. Los datos se procesan solo en este navegador.</p>
-        <div className="row center">
-          <FileButton accept=".csv,.tsv,.txt,.xlsx,text/csv" onFile={load} className="btn primary">Elegir archivo</FileButton>
-          <a className="btn ghost" href="./ejemplo_participantes.csv" download>Descargar planilla de ejemplo</a>
-        </div>
-      </div>
-      {err && <p className="error">{err}</p>}
-      <p className="muted">Fuente actual: <strong>{dataset.fileName}</strong> · {dataset.rows.length} filas · {dataset.columns.length} columnas</p>
-
-      <h3>Mapeo de columnas</h3>
-      <p className="muted">Se detecta automáticamente por el nombre del encabezado. Revisa y corrige si es necesario.</p>
-      <div className="map-grid">
-        {CANONICAL_FIELDS.map((f) => (
-          <label key={f.key} className="map-row">
-            <span><code>{`{{${f.key}}}`}</code> {f.label}</span>
-            <select value={mapping[f.key] || ''} onChange={(e) => setMapping({ ...mapping, [f.key]: e.target.value || undefined })}>
-              <option value="">(sin asignar)</option>
-              {dataset.columns.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </label>
-        ))}
-      </div>
-      {missingName > 0 && <p className="warn">{nameCol ? `${missingName} fila(s) no tienen nombre.` : 'No hay columna asignada al nombre.'} Revisa el mapeo antes de emitir.</p>}
-
-      <h3>Agregar participante manualmente</h3>
-      <p className="muted">Útil para emisiones individuales o para completar un lote.</p>
-      <div className="form-grid compact">
-        {CANONICAL_FIELDS.map((f) => (
-          <Field key={f.key} label={f.label}>
-            <input value={manual[f.key] || ''} onChange={(e) => setManual({ ...manual, [f.key]: e.target.value })} />
-          </Field>
-        ))}
-      </div>
-      <button className="btn primary" onClick={addManual}>Agregar a la lista</button>
-
-      <div className="row between table-head">
-        <h3>Datos cargados</h3>
-        <div className="row">
-          <input placeholder="Buscar…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <button className="btn ghost" onClick={() => { if (confirm('¿Vaciar la lista de participantes?')) { setDataset({ fileName: '(vacío)', columns: dataset.columns, rows: [] }); } }}>Vaciar lista</button>
-        </div>
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>#</th>{dataset.columns.map((c) => <th key={c}>{c}</th>)}<th /></tr></thead>
-          <tbody>
-            {visible.map(([r, i]) => (
-              <tr key={i}>
-                <td>{i + 1}</td>
-                {dataset.columns.map((c) => <td key={c}>{r[c]}</td>)}
-                <td className="nowrap">
-                  <button className="btn small" onClick={() => onView(i)}>Ver</button>
-                  <button className="btn ghost small" onClick={() => setDataset({ ...dataset, rows: dataset.rows.filter((_, j) => j !== i) })} aria-label="Quitar fila">✕</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {dataset.rows.length > 300 && <p className="muted small">Se muestran las primeras 300 coincidencias.</p>}
-      </div>
-    </section>
-  );
-}
-
-/* ───────────── Registro ───────────── */
-export function RegistryPanel({ registry, setRegistry, settings, event }) {
+/* ───────── Historial ───────── */
+export function History({ registry, setRegistry, settings, event, qr, markDirty }) {
   const [q, setQ] = useState('');
   const [msg, setMsg] = useState('');
-  const [token, setToken] = useState(() => { try { return sessionStorage.getItem('certifica.gh') || ''; } catch { return ''; } });
-  const [busy, setBusy] = useState(false);
+  const [revoking, setRevoking] = useState(null);
+  const [reason, setReason] = useState('');
 
   const list = useMemo(() => {
     const s = q.toLowerCase();
-    return [...registry].reverse().filter((r) => !s || [r.nombre, r.folio, r.codigo, r.evento, r.id].some((v) => String(v || '').toLowerCase().includes(s)));
+    return [...registry].reverse().filter((r) => !s || [r.nombre, r.folio, r.codigo, r.evento, r.tipo].some((v) => String(v || '').toLowerCase().includes(s)));
   }, [registry, q]);
-  const publicJson = () => JSON.stringify(buildPublicRegistry(registry, settings.publicLevel, { institucion: event.institucion }), null, 2);
 
-  const setEstado = (id, revoke) => {
-    let motivo = '';
-    if (revoke) { motivo = prompt('Motivo de la revocación (opcional):') ?? null; if (motivo === null) return; }
-    setRegistry((rs) => rs.map((r) => (r.id === id ? (revoke ? { ...r, estado: 'revocado', revocado: new Date().toISOString(), motivo } : { ...r, estado: 'vigente', revocado: undefined, motivo: undefined }) : r)));
+  const revoke = (id) => {
+    setRegistry((rs) => rs.map((r) => (r.id === id ? { ...r, estado: 'revocado', revocado: new Date().toISOString(), motivo: reason.trim() } : r)));
+    setRevoking(null); setReason(''); markDirty();
+  };
+  const restore = (id) => {
+    setRegistry((rs) => rs.map((r) => (r.id === id ? { ...r, estado: 'vigente', revocado: undefined, motivo: undefined } : r)));
+    markDirty();
   };
   const importFile = async (file) => {
     try {
       const recs = readRegistry(JSON.parse(await file.text()));
       setRegistry((rs) => mergeRecords(rs, recs));
-      setMsg(`Se incorporaron los registros del archivo (${recs.length} leídos).`);
-    } catch (e) { setMsg(`No se pudo leer el archivo: ${e.message}`); }
-  };
-  const loadPublished = async () => {
-    try {
-      const r = await fetch('./registry.json', { cache: 'no-store' });
-      if (!r.ok) throw new Error(`respuesta ${r.status}`);
-      const recs = readRegistry(await r.json());
-      setRegistry((rs) => mergeRecords(rs, recs));
-      setMsg(`Registro publicado leído: ${recs.length} documentos.`);
-    } catch (e) { setMsg(`No se pudo leer el registro publicado (${e.message}).`); }
-  };
-  const publish = async () => {
-    const gh = settings.github || {};
-    if (!gh.owner || !gh.repo || !token) { setMsg('Completa usuario, repositorio y token en Ajustes y en el campo de abajo.'); return; }
-    setBusy(true); setMsg('');
-    try {
-      try { sessionStorage.setItem('certifica.gh', token); } catch { /* */ }
-      await publishToGitHub({ ...gh, token, content: publicJson(), message: `Registro de verificación: ${registry.length} documentos` });
-      setMsg('Registro publicado en GitHub. El portal de verificación se actualizará cuando termine el despliegue (normalmente 1 a 2 minutos).');
-    } catch (e) { setMsg(e.message); } finally { setBusy(false); }
+      setMsg(`Se recuperaron ${recs.length} registros del archivo.`);
+    } catch { setMsg('Ese archivo no es una copia del historial.'); }
   };
 
   return (
-    <section className="panel">
-      <h2>Registro de emisión</h2>
-      <p className="lead">
-        Cada documento emitido queda anotado aquí con su ID, folio, código y huella SHA-256 del archivo. Para que los QR funcionen, publica el registro en <code>public/registry.json</code> del repositorio. Nivel de publicación actual: <strong>{PUBLIC_LEVELS[settings.publicLevel]}</strong> (se cambia en Ajustes).
-      </p>
-      <div className="stats">
-        <div><strong>{registry.length}</strong><span>emitidos</span></div>
-        <div><strong>{registry.filter((r) => r.estado === 'revocado').length}</strong><span>revocados</span></div>
-        <div><strong>{new Set(registry.map((r) => r.evento)).size}</strong><span>instancias</span></div>
-      </div>
-      <div className="row wrap">
-        <button className="btn primary" onClick={() => downloadText(publicJson(), 'registry.json')}>Descargar registry.json</button>
-        <button className="btn" onClick={() => downloadText(recordsToCsv(registry), 'registro_emision.csv', 'text/csv')}>Exportar CSV completo</button>
-        <FileButton accept=".json,application/json" onFile={importFile}>Importar registro</FileButton>
-        <button className="btn" onClick={loadPublished}>Sincronizar con el registro publicado</button>
-        <button className="btn danger ghost" onClick={() => { if (confirm('Esto borra el registro guardado en este navegador. ¿Exportaste una copia?')) setRegistry([]); }}>Vaciar registro local</button>
+    <section className="step-wrap wide">
+      <header className="step-head">
+        <h1>Historial de documentos</h1>
+        <p>Todos los documentos que has generado. Desde aquí puedes comprobar cómo se ven al escanear su QR o anular uno emitido por error.</p>
+      </header>
+
+      <div className="card">
+        <h2>Estado de los códigos QR</h2>
+        <QrStatus qr={qr} />
       </div>
 
-      <details className="box">
-        <summary>Publicar directamente en GitHub</summary>
-        <p className="muted small">
-          Requiere un token de acceso de grano fino con permiso «Contents: Read and write» solo sobre este repositorio. El token se guarda únicamente en esta pestaña y se borra al cerrarla. Repositorio configurado: <code>{settings.github?.owner || '—'}/{settings.github?.repo || '—'}</code>, rama <code>{settings.github?.branch || 'main'}</code>.
-        </p>
-        <div className="row">
-          <input type="password" className="grow" placeholder="github_pat_…" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
-          <button className="btn primary" disabled={busy} onClick={publish}>{busy ? 'Publicando…' : 'Publicar registro'}</button>
+      <div className="card">
+        <div className="row between">
+          <h2>{registry.length} documentos</h2>
+          <input placeholder="Buscar por nombre, folio o código…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar en el historial" />
         </div>
-      </details>
-      {msg && <p className="note">{msg}</p>}
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Folio</th><th>Nombre</th><th>Documento</th><th>Evento</th><th>Fecha</th><th>Estado</th><th /></tr></thead>
+            <tbody>
+              {list.slice(0, 500).map((r) => (
+                <tr key={r.id}>
+                  <td className="nowrap">{r.folio}</td>
+                  <td>{r.nombre}</td>
+                  <td>{String(r.tipo || '').replace(/_/g, ' ')}</td>
+                  <td>{r.evento}</td>
+                  <td className="nowrap">{fmt(r.emitido)}</td>
+                  <td>{r.estado === 'revocado' ? <span className="pill bad">Anulado</span> : <span className="pill ok">Válido</span>}</td>
+                  <td className="nowrap">
+                    {revoking === r.id ? (
+                      <span className="row">
+                        <input placeholder="Motivo (opcional)" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Motivo de la anulación" />
+                        <button className="btn danger solid small" onClick={() => revoke(r.id)}>Anular</button>
+                        <button className="btn ghost small" onClick={() => setRevoking(null)}>Cancelar</button>
+                      </span>
+                    ) : (
+                      <>
+                        <a className="btn small" href={verifyUrl(settings.baseUrl, r.id)} target="_blank" rel="noreferrer">Ver verificación</a>
+                        {r.estado === 'revocado'
+                          ? <button className="btn ghost small" onClick={() => restore(r.id)}>Reactivar</button>
+                          : <button className="btn ghost small" onClick={() => { setRevoking(r.id); setReason(''); }}>Anular</button>}
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!list.length && <tr><td colSpan={7} className="muted">Todavía no has generado documentos.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <p className="muted small">Al anular un documento, quien escanee su QR verá que ya no es válido (después de activar los cambios).</p>
+      </div>
 
-      <div className="row between table-head">
-        <h3>Documentos</h3>
-        <input placeholder="Buscar por nombre, folio o código…" value={q} onChange={(e) => setQ(e.target.value)} />
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>Folio</th><th>Nombre</th><th>Tipo</th><th>Evento</th><th>Emitido</th><th>Código</th><th>Estado</th><th /></tr></thead>
-          <tbody>
-            {list.slice(0, 500).map((r) => (
-              <tr key={r.id} className={r.estado === 'revocado' ? 'revoked' : ''}>
-                <td className="nowrap">{r.folio}</td>
-                <td>{r.nombre || <span className="muted">(no publicado)</span>}</td>
-                <td>{r.tipo}</td>
-                <td>{r.evento}</td>
-                <td className="nowrap">{r.emitido ? new Date(r.emitido).toLocaleString('es-CL') : ''}</td>
-                <td className="nowrap"><code>{r.codigo}</code></td>
-                <td>{r.estado === 'revocado' ? 'Revocado' : 'Vigente'}</td>
-                <td className="nowrap">
-                  <a className="btn small" href={verifyUrl(settings.baseUrl, r.id)} target="_blank" rel="noreferrer">Verificar</a>
-                  {r.estado === 'revocado'
-                    ? <button className="btn ghost small" onClick={() => setEstado(r.id, false)}>Reactivar</button>
-                    : <button className="btn ghost small" onClick={() => setEstado(r.id, true)}>Revocar</button>}
-                </td>
-              </tr>
-            ))}
-            {!list.length && <tr><td colSpan={8} className="muted">Aún no hay documentos emitidos.</td></tr>}
-          </tbody>
-        </table>
-      </div>
+      <details className="card more">
+        <summary>Copias de respaldo y exportación</summary>
+        <p className="muted small">El historial se guarda en este navegador. Descarga una copia de vez en cuando, sobre todo si cambias de computador.</p>
+        <div className="row wrap">
+          <button className="btn" onClick={() => downloadText(recordsToCsv(registry), 'historial_documentos.csv', 'text/csv')}>Descargar lista para Excel</button>
+          <button className="btn" onClick={() => downloadText(JSON.stringify(registry), 'respaldo_historial.json')}>Descargar copia de respaldo</button>
+          <FileButton accept=".json,application/json" onFile={importFile}>Recuperar desde una copia</FileButton>
+          <button className="btn ghost" onClick={() => downloadText(JSON.stringify(buildPublicRegistry(registry, settings.publicLevel, { institucion: event.institucion }), null, 2), 'registry.json')}>Descargar registry.json (publicación manual)</button>
+        </div>
+        {msg && <p className="note">{msg}</p>}
+      </details>
     </section>
   );
 }
 
-/* ───────────── Ajustes ───────────── */
-export function SettingsPanel({ settings, setSettings }) {
+/* ───────── Configuración ───────── */
+const LEVELS = [
+  ['nombre', 'Nombre de la persona y su rol', 'Recomendado. Permite comprobar que el documento corresponde a quien lo presenta.'],
+  ['completo', 'Nombre, rol y parte del RUT', 'Se muestran solo los dos primeros y los dos últimos caracteres (ej.: 12.•••.•••-5).'],
+  ['minimo', 'Solo el tipo de documento y el evento', 'Máxima privacidad: no se publica ningún dato personal.'],
+];
+
+export function Settings({ settings, setSettings, qr, resetAll }) {
+  const gh = useGitHub(settings);
+  const [askReset, setAskReset] = useState(false);
   const set = (k, v) => setSettings((s) => ({ ...s, [k]: v }));
   const setE = (k, v) => setSettings((s) => ({ ...s, emailjs: { ...s.emailjs, [k]: v } }));
-  const setG = (k, v) => setSettings((s) => ({ ...s, github: { ...s.github, [k]: v } }));
+  const next = `${settings.folioPrefix || ''}${String(settings.nextFolio || 1).padStart(4, '0')}`;
+
   return (
-    <section className="panel">
-      <h2>Ajustes</h2>
-      <h3>Verificación</h3>
-      <div className="form-grid">
-        <Field label="URL pública de la aplicación" hint={`Vacío usa la dirección actual: ${resolveBaseUrl('')}. Los QR apuntarán a …/verify/?id=`}>
-          <input placeholder="https://tu-usuario.github.io/certifica/" value={settings.baseUrl} onChange={(e) => set('baseUrl', e.target.value)} />
-        </Field>
-        <Field label="Datos publicados en el registro" hint="Ley 19.628 y Ley 21.719: publica solo lo necesario para verificar.">
-          <select value={settings.publicLevel} onChange={(e) => set('publicLevel', e.target.value)}>
-            {Object.entries(PUBLIC_LEVELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </Field>
+    <section className="step-wrap">
+      <header className="step-head">
+        <h1>Configuración</h1>
+        <p>Se ajusta una vez y queda guardada en este navegador.</p>
+      </header>
+
+      <div className="card">
+        <h2>Verificación con código QR</h2>
+        {qr.connected ? (
+          <>
+            <p className="banner ok small">Conectado a GitHub ({gh.owner}/{gh.repo}). Los códigos QR se activan solos cada vez que generas documentos.</p>
+            <div className="row wrap">
+              <button className="btn" onClick={() => qr.publish()}>Actualizar ahora</button>
+              <button className="btn ghost" onClick={() => { forgetToken(); setSettings((s) => ({ ...s, github: { ...s.github, connected: false } })); }}>Desconectar</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p>Sin conectar. Los documentos se generan igual, pero sus códigos QR no funcionarán hasta que actives la verificación.</p>
+            <button className="btn primary" onClick={qr.openConnect}>Activar verificación</button>
+          </>
+        )}
+        <h3>¿Qué se muestra al escanear el QR?</h3>
+        <div className="radio-cards">
+          {LEVELS.map(([k, t, d]) => (
+            <label key={k} className={`radio-card${settings.publicLevel === k ? ' on' : ''}`}>
+              <input type="radio" checked={settings.publicLevel === k} onChange={() => set('publicLevel', k)} />
+              <span><strong>{t}</strong><br /><span className="muted small">{d}</span></span>
+            </label>
+          ))}
+        </div>
+        <p className="muted small">La página de verificación es pública. Publica solo los datos que tengas autorización para mostrar (Ley 19.628 y Ley 21.719 sobre protección de datos personales).</p>
       </div>
-      <h3>Folios y archivos</h3>
-      <div className="form-grid">
-        <Field label="Prefijo del folio"><input value={settings.folioPrefix} onChange={(e) => set('folioPrefix', e.target.value)} /></Field>
-        <Field label="Próximo número de folio"><input type="number" min={1} value={settings.nextFolio} onChange={(e) => set('nextFolio', Number(e.target.value) || 1)} /></Field>
-        <Field label="Patrón de nombre de archivo" hint="Ejemplo: {{tipo_documento}}_{{nombre}} produce Certificado_Juan_Perez.pdf">
+
+      <div className="card">
+        <h2>Numeración de los documentos</h2>
+        <p className="muted">Cada documento recibe un número de folio correlativo.</p>
+        <div className="grid2">
+          <Field label="Texto antes del número"><input value={settings.folioPrefix} onChange={(e) => set('folioPrefix', e.target.value)} /></Field>
+          <Field label="Próximo número"><input type="number" min={1} value={settings.nextFolio} onChange={(e) => set('nextFolio', Number(e.target.value) || 1)} /></Field>
+        </div>
+        <p className="note small">El próximo documento será el <strong>{next}</strong>.</p>
+      </div>
+
+      <div className="card">
+        <h2>Envío por correo</h2>
+        <p className="muted">La aplicación usa EmailJS, un servicio gratuito para enviar correos desde tu cuenta (Gmail, Outlook u otra). Se configura una vez:</p>
+        <ol className="steps-list">
+          <li>Crea una cuenta gratuita en <a href="https://www.emailjs.com/" target="_blank" rel="noreferrer">emailjs.com</a>.</li>
+          <li>En <em>Email Services</em>, pulsa <em>Add New Service</em>, elige tu correo y conéctalo. Copia el <strong>Service ID</strong>.</li>
+          <li>En <em>Email Templates</em>, crea una plantilla. En «To Email» escribe <code>{'{{to_email}}'}</code>, en «Subject» <code>{'{{asunto}}'}</code> y en el contenido <code>{'{{mensaje}}'}</code>. Para adjuntar el PDF, en la pestaña <em>Attachments</em> agrega un <em>Variable Attachment</em> con el nombre <code>certificado</code>. Guarda y copia el <strong>Template ID</strong>.</li>
+          <li>En <em>Account</em>, copia tu <strong>Public Key</strong>.</li>
+        </ol>
+        <div className="grid3">
+          <Field label="Service ID"><input value={settings.emailjs.serviceId} onChange={(e) => setE('serviceId', e.target.value.trim())} /></Field>
+          <Field label="Template ID"><input value={settings.emailjs.templateId} onChange={(e) => setE('templateId', e.target.value.trim())} /></Field>
+          <Field label="Public Key"><input value={settings.emailjs.publicKey} onChange={(e) => setE('publicKey', e.target.value.trim())} /></Field>
+        </div>
+        <Field label="Asunto del correo"><input value={settings.emailjs.subject} onChange={(e) => setE('subject', e.target.value)} /></Field>
+        <Field label="Mensaje" hint="Los textos entre llaves dobles se reemplazan por los datos de cada persona: {{nombre}}, {{evento}}, {{url_verificacion}}, {{codigo}}.">
+          <textarea rows={6} value={settings.emailjs.message} onChange={(e) => setE('message', e.target.value)} />
+        </Field>
+        <label className="check"><input type="checkbox" checked={settings.emailjs.attach} onChange={(e) => setE('attach', e.target.checked)} />Adjuntar el PDF al correo</label>
+        <p className="muted small">El plan gratuito de EmailJS admite unos 200 correos al mes y adjuntos pequeños. Si el diseño tiene una imagen de fondo pesada, desmarca el adjunto: el correo llevará el enlace de verificación.</p>
+      </div>
+
+      <details className="card more">
+        <summary>Opciones avanzadas</summary>
+        <Field label="Dirección pública de la aplicación" hint={`Si la dejas vacía se usa la dirección actual (${resolveBaseUrl('')}). Los códigos QR apuntan a esta dirección.`}>
+          <input placeholder="https://usuario.github.io/repositorio/" value={settings.baseUrl} onChange={(e) => set('baseUrl', e.target.value.trim())} />
+        </Field>
+        <Field label="Nombre de los archivos PDF" hint="Ejemplo: {{tipo_documento}}_{{nombre}} produce Certificado_Juan_Perez.pdf">
           <input value={settings.fileNamePattern} onChange={(e) => set('fileNamePattern', e.target.value)} />
         </Field>
-      </div>
-      <h3>Envío por correo (EmailJS)</h3>
-      <p className="muted">
-        EmailJS permite enviar desde el navegador sin servidor propio. Crea un servicio y una plantilla en emailjs.com con las variables <code>{'{{to_email}}'}</code>, <code>{'{{to_name}}'}</code>, <code>{'{{asunto}}'}</code> y <code>{'{{mensaje}}'}</code>. Para adjuntar el PDF, agrega en la plantilla un adjunto de tipo «Variable Attachment» con el parámetro <code>certificado</code>. El plan gratuito limita el tamaño de cada envío, por lo que con fondos pesados conviene enviar solo el enlace de verificación.
-      </p>
-      <div className="form-grid">
-        <Field label="Service ID"><input value={settings.emailjs.serviceId} onChange={(e) => setE('serviceId', e.target.value)} /></Field>
-        <Field label="Template ID"><input value={settings.emailjs.templateId} onChange={(e) => setE('templateId', e.target.value)} /></Field>
-        <Field label="Public key"><input value={settings.emailjs.publicKey} onChange={(e) => setE('publicKey', e.target.value)} /></Field>
-        <Field label="Asunto"><input value={settings.emailjs.subject} onChange={(e) => setE('subject', e.target.value)} /></Field>
-        <Field label="Mensaje" wide><textarea rows={6} value={settings.emailjs.message} onChange={(e) => setE('message', e.target.value)} /></Field>
-      </div>
-      <label className="check"><input type="checkbox" checked={settings.emailjs.attach} onChange={(e) => setE('attach', e.target.checked)} />Adjuntar el PDF (si se desmarca, se envía solo el enlace de verificación)</label>
-      <h3>Repositorio de GitHub</h3>
-      <p className="muted">Opcional. Permite publicar el registro desde la pestaña Registro sin editar archivos a mano.</p>
-      <div className="form-grid">
-        <Field label="Usuario u organización"><input value={settings.github.owner} onChange={(e) => setG('owner', e.target.value)} /></Field>
-        <Field label="Repositorio"><input value={settings.github.repo} onChange={(e) => setG('repo', e.target.value)} /></Field>
-        <Field label="Rama"><input value={settings.github.branch} onChange={(e) => setG('branch', e.target.value)} /></Field>
-        <Field label="Ruta del registro"><input value={settings.github.path} onChange={(e) => setG('path', e.target.value)} /></Field>
-      </div>
+        <h3>Empezar de cero</h3>
+        <p className="muted small">Borra el diseño, los datos del evento y la configuración de este navegador. El historial de documentos se conserva.</p>
+        {askReset ? (
+          <div className="row">
+            <button className="btn danger solid" onClick={resetAll}>Sí, borrar y empezar de cero</button>
+            <button className="btn ghost" onClick={() => setAskReset(false)}>Cancelar</button>
+          </div>
+        ) : <button className="btn danger" onClick={() => setAskReset(true)}>Empezar de cero</button>}
+      </details>
     </section>
+  );
+}
+
+/* ───────── Ayuda ───────── */
+export function HelpContent() {
+  const faq = [
+    ['¿Cómo funciona, en resumen?', 'Eliges un modelo, escribes los datos del evento, subes el logo y las firmas, cargas la lista de personas y generas. La aplicación crea un PDF para cada persona, con su nombre, un número de folio y un código QR único.'],
+    ['¿Para qué sirve el código QR?', 'Quien recibe el documento (o un tercero, como otra universidad) puede escanearlo con el teléfono y ver una página que confirma que el documento es auténtico y fue emitido por tu institución. Si alguien altera el PDF, la página igual muestra los datos originales.'],
+    ['¿Dónde quedan los datos de las personas?', 'En tu navegador. La aplicación no tiene servidor: la lista de personas no se envía a ninguna parte. Solo se publica, para la verificación, lo que elijas en Configuración (por defecto, el nombre y el rol).'],
+    ['¿Cómo cambio un texto del documento?', 'En el paso «Diseño», edita los textos en la columna de la derecha o haz clic sobre el texto en el documento. Los datos entre llaves, como {Nombre}, se completan solos.'],
+    ['Un nombre muy largo no cabe', 'La letra se achica sola para que el nombre quepa en una línea. Usa «Ver el nombre más largo» en el último paso para revisarlo. Si queda muy chico, en «Diseño» haz el recuadro del nombre más ancho.'],
+    ['Me equivoqué en un documento ya emitido', 'Corrige el dato en la lista, genera de nuevo solo para esa persona y, en «Historial», anula el documento equivocado.'],
+    ['¿Puedo usarla en otro computador?', 'Sí. En «Diseño» → «Guardar o cargar este diseño», guarda el diseño en un archivo; en «Historial», descarga una copia de respaldo. En el otro computador, carga ambos archivos.'],
+    ['¿Cómo deshago un cambio?', 'Con el botón «Deshacer» del paso «Diseño», o con Ctrl+Z (Cmd+Z en Mac).'],
+  ];
+  return (
+    <div className="faq">
+      {faq.map(([q, a]) => (
+        <details key={q}>
+          <summary>{q}</summary>
+          <p>{a}</p>
+        </details>
+      ))}
+    </div>
   );
 }

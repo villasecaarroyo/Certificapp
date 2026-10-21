@@ -68,7 +68,7 @@ function Verify() {
       </header>
 
       <form className="verify-form" onSubmit={submit}>
-        <label htmlFor="q">ID, código de verificación o folio</label>
+        <label htmlFor="q">Escribe el código que aparece bajo el QR, o el número de folio</label>
         <div className="row">
           <input id="q" className="grow" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ej.: 31FB-2939-A0C4" />
           <button className="btn primary">Verificar</button>
@@ -103,14 +103,18 @@ function Verify() {
             <dt>Folio</dt><dd>{found.folio}</dd>
             <dt>Código</dt><dd><code>{found.codigo}</code></dd>
             <dt>Emitido</dt><dd>{fmt(found.emitido)}</dd>
-            <dt>Huella SHA-256</dt><dd><code className="hash">{found.hash}</code></dd>
           </dl>
+          <details className="more">
+            <summary>Datos técnicos</summary>
+            <p className="small">Identificador: <code>{found.id}</code></p>
+            <p className="small">Huella SHA-256: <code className="hash">{found.hash}</code></p>
+          </details>
         </div>
       )}
 
       <section className="verify-file">
-        <h3>Comprobar que un archivo PDF no fue modificado</h3>
-        <p className="muted">Selecciona el PDF recibido. Se calcula su huella SHA-256 en este navegador, sin subirlo a ningún servidor, y se compara con la huella registrada al emitirlo.</p>
+        <h3>¿Recibiste el documento en PDF? Comprueba que no fue modificado</h3>
+        <p className="muted">Selecciona el archivo. Se revisa aquí mismo, sin subirlo a ningún lado, y se compara con el original emitido.</p>
         <input type="file" accept="application/pdf,.pdf" onChange={(e) => { const f = e.target.files[0]; e.target.value = ''; if (f) checkFile(f); }} />
         {fileRes && (
           fileRes.match

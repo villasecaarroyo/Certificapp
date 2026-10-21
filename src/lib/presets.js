@@ -4,16 +4,15 @@ import { pageDims } from './page.js';
 const NAVY = '#1f3a5f', GOLD = '#a8843f', INK = '#222222', GREY = '#666666';
 
 export const DOC_TYPES = [
-  { key: 'certificado', label: 'Certificado (participación, asistencia, ponencia)' },
-  { key: 'invitacion', label: 'Invitación académica' },
-  { key: 'aceptacion', label: 'Carta de aceptación' },
-  { key: 'credencial', label: 'Credencial o gafete de evento' },
-  { key: 'blanco', label: 'Plantilla en blanco' },
+  { key: 'certificado', label: 'Certificado', desc: 'De asistencia, participación, ponencia u organización.' },
+  { key: 'invitacion', label: 'Invitación', desc: 'Carta formal para invitar a expositores o invitados.' },
+  { key: 'aceptacion', label: 'Carta de aceptación', desc: 'Confirma que una ponencia o trabajo fue aceptado.' },
+  { key: 'credencial', label: 'Credencial', desc: 'Gafete para colgar, con nombre, rol y código QR.' },
 ];
 
 const T = (o) => ({ id: sid(), type: 'text', font: 'helvetica', size: 12, color: INK, align: 'center', valign: 'top', lineHeight: 1.2, fit: 'shrink', ...o });
-const IMG = (o) => ({ id: sid(), type: 'image', src: null, label: 'Logo institucional', ...o });
-const SIG = (o) => ({ id: sid(), type: 'signature', src: null, name: 'Nombre Apellido', title: 'Cargo', font: 'helvetica', size: 10, color: INK, line: true, ...o });
+const IMG = (o) => ({ id: sid(), type: 'image', src: null, label: 'Logo institucional', role: 'logo', ...o });
+const SIG = (o) => ({ id: sid(), type: 'signature', src: null, name: 'Nombre del firmante', title: 'Cargo', font: 'helvetica', size: 10, color: INK, line: true, ...o });
 const QR = (o) => ({ id: sid(), type: 'qr', content: '{{url_verificacion}}', color: INK, bg: true, margin: 1, ...o });
 const RECT = (o) => ({ id: sid(), type: 'rect', fill: null, stroke: null, strokeWidth: 0, ...o });
 
@@ -34,8 +33,8 @@ function certificado() {
       T({ x: 110, y: 314, w: W - 220, h: 78, font: 'times', size: 14, lineHeight: 1.35,
         text: 'participó[[ en calidad de **{{rol}}**]] en el **{{evento}}**, organizado por {{institucion}}[[ y realizado en {{lugar}}]], {{fecha}}[[, con una duración de {{duracion_horas}} horas cronológicas]].' }),
       T({ x: 110, y: 394, w: W - 220, h: 30, text: '[[Ponencia «{{titulo_trabajo}}»]]', font: 'times', italic: true, size: 12, lineHeight: 1.25 }),
-      SIG({ x: 150, y: 432, w: 210, h: 100, title: 'Cargo\n{{unidad}}' }),
-      SIG({ x: 470, y: 432, w: 210, h: 100, title: 'Cargo\n{{institucion}}' }),
+      SIG({ x: 150, y: 432, w: 210, h: 100, title: 'Director(a)\nFacultad de Ciencias Sociales' }),
+      SIG({ x: 470, y: 432, w: 210, h: 100, title: 'Coordinador(a) académico(a)\nComité organizador' }),
       QR({ x: W - 108, y: H - 128, w: 70, h: 70 }),
       T({ x: W - 125, y: H - 56, w: 104, h: 10, text: 'Código {{codigo}}', size: 6.5, color: GREY, fit: 'single' }),
       T({ x: 44, y: H - 50, w: 380, h: 10, text: 'Folio {{folio}} · Emitido el {{fecha_emision}} · Verificable mediante código QR', size: 7, color: GREY, align: 'left', fit: 'single' }),
@@ -59,7 +58,7 @@ function carta(kind) {
       T({ x: 60, y: 176, w: W - 120, h: 58, text: '[[{{tratamiento}} ]]**{{nombre}}**\n[[{{afiliacion}}\n]]Presente', size: 11, align: 'left', lineHeight: 1.35 }),
       T({ x: 60, y: 250, w: W - 120, h: 24, text: isInv ? 'INVITACIÓN' : 'CARTA DE ACEPTACIÓN', font: 'times', size: 18, bold: true, color: NAVY, fit: 'single' }),
       T({ x: 60, y: 290, w: W - 120, h: 310, text: body, size: 11.5, align: 'justify', lineHeight: 1.45, minSize: 8 }),
-      SIG({ x: W / 2 - 100, y: 625, w: 200, h: 100, title: isInv ? 'Cargo\n{{institucion}}' : 'Comité Organizador\n{{evento}}' }),
+      SIG({ x: W / 2 - 100, y: 625, w: 200, h: 100, title: isInv ? 'Director(a)\nFacultad de Ciencias Sociales' : 'Presidente(a)\nComité organizador' }),
       QR({ x: W - 120, y: H - 112, w: 60, h: 60 }),
       T({ x: W - 140, y: H - 48, w: 100, h: 9, text: 'Código {{codigo}}', size: 6.5, color: GREY, fit: 'single' }),
       T({ x: 60, y: H - 44, w: 360, h: 10, text: 'Folio {{folio}} · Documento verificable mediante código QR', size: 7, color: GREY, align: 'left', fit: 'single' }),
@@ -99,7 +98,7 @@ export function makePreset(key) {
 export function newElement(type, page) {
   const [W, H] = pageDims(page);
   switch (type) {
-    case 'text': return T({ x: W / 2 - 150, y: H / 2 - 15, w: 300, h: 30, text: 'Texto nuevo', size: 14 });
+    case 'text': return T({ x: W / 2 - 150, y: H / 2 - 15, w: 300, h: 30, text: 'Escribe aquí tu texto', size: 14 });
     case 'variable': return T({ x: W / 2 - 150, y: H / 2 - 15, w: 300, h: 30, text: '{{nombre}}', size: 16, fit: 'single' });
     case 'image': return IMG({ x: W / 2 - 60, y: H / 2 - 40, w: 120, h: 80, label: 'Imagen' });
     case 'signature': return SIG({ x: W / 2 - 100, y: H / 2 - 50, w: 200, h: 100 });
@@ -125,7 +124,8 @@ export const DEFAULT_EVENT = {
 };
 
 export const SAMPLE_DATASET = {
-  fileName: 'ejemplo (incluido)',
+  fileName: 'Datos de ejemplo',
+  sample: true,
   columns: ['Nombre completo', 'RUT', 'Correo', 'Rol', 'Institución', 'Título ponencia', 'Mesa'],
   rows: [
     { 'Nombre completo': 'María José Fernández-Ugarte de la Fuente Valenzuela', RUT: '12.345.678-5', Correo: 'mjfernandez@example.com', Rol: 'Expositora', 'Institución': 'Universidad del Norte', 'Título ponencia': 'Coaliciones de gobierno y disciplina legislativa en América Latina, 1990-2024', Mesa: 'la Mesa 3, Instituciones políticas comparadas' },
@@ -147,3 +147,55 @@ export const DEFAULT_SETTINGS = {
   },
   github: { owner: '', repo: '', branch: 'main', path: 'public/registry.json' },
 };
+
+// Reparte las firmas en una fila, centradas en la página. Se usa al agregar o quitar firmas desde el formulario.
+export function arrangeSignatures(template) {
+  const sigs = template.elements.filter((e) => e.type === 'signature');
+  if (!sigs.length) return template;
+  const [W] = pageDims(template.page);
+  const n = sigs.length;
+  const y = sigs[0].y, h = sigs[0].h;
+  let left = 50, right = W - 50;
+  // Deja libre el espacio del código QR si está a la misma altura que las firmas
+  for (const q of template.elements.filter((e) => e.type === 'qr' && !e.hidden)) {
+    if (q.y < y + h && q.y + q.h > y) {
+      if (q.x > W / 2) right = Math.min(right, q.x - 12); else left = Math.max(left, q.x + q.w + 12);
+    }
+  }
+  const slot = (right - left) / n;
+  const w = Math.min(210, slot - 14);
+  const pos = new Map(sigs.map((s, i) => [s.id, { x: Math.round(left + slot * i + (slot - w) / 2), y, w: Math.round(w), h }]));
+  return { ...template, elements: template.elements.map((e) => (pos.has(e.id) ? { ...e, ...pos.get(e.id) } : e)) };
+}
+
+export function newSignature(template) {
+  const sigs = template.elements.filter((e) => e.type === 'signature');
+  const base = sigs[sigs.length - 1];
+  const [W, H] = pageDims(template.page);
+  const sig = SIG(base ? { y: base.y, h: base.h, size: base.size, font: base.font, color: base.color } : { x: W / 2 - 100, y: H - 160, w: 200, h: 100 });
+  sig.name = 'Nombre del firmante';
+  sig.title = 'Cargo';
+  return sig;
+}
+
+// Al cambiar de tipo de documento, conserva el logo, las firmas y el fondo ya cargados.
+export function switchPreset(key, current) {
+  const next = makePreset(key);
+  const logo = current?.elements?.find((e) => e.type === 'image' && e.role === 'logo' && e.src);
+  const oldSigs = (current?.elements || []).filter((e) => e.type === 'signature');
+  let si = 0;
+  next.elements = next.elements.map((e) => {
+    if (e.type === 'image' && e.role === 'logo' && logo) return { ...e, src: logo.src, natW: logo.natW, natH: logo.natH };
+    if (e.type === 'signature' && oldSigs[si]) { const o = oldSigs[si++]; return { ...e, src: o.src, natW: o.natW, natH: o.natH, name: o.name, title: o.title }; }
+    return e;
+  });
+  // Firmas adicionales que el usuario había agregado
+  if (key !== 'credencial') {
+    const extra = oldSigs.slice(si);
+    if (extra.length) {
+      for (const o of extra) next.elements.push({ ...newSignature(next), src: o.src, natW: o.natW, natH: o.natH, name: o.name, title: o.title });
+      return { ...arrangeSignatures(next), background: current?.background || null, fonts: current?.fonts || [] };
+    }
+  }
+  return { ...next, background: current?.background || null, fonts: current?.fonts || [] };
+}

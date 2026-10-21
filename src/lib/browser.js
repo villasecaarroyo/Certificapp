@@ -129,15 +129,42 @@ export async function sendEmailJS(cfg, item) {
   return emailjs.send(cfg.serviceId, cfg.templateId, params, { publicKey: cfg.publicKey });
 }
 
-export async function publishToGitHub({ owner, repo, branch = 'main', path = 'public/registry.json', token, content, message }) {
-  const api = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
-  let sha;
-  const g = await fetch(`${api}?ref=${encodeURIComponent(branch)}`, { headers });
-  if (g.ok) sha = (await g.json()).sha;
-  else if (g.status !== 404) throw new Error(`GitHub respondió ${g.status} al leer el registro.`);
-  const body = { message, branch, content: bytesToBase64(new TextEncoder().encode(content)), ...(sha ? { sha } : {}) };
-  const r = await fetch(api, { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!r.ok) { let m = ''; try { m = (await r.json()).message; } catch { /* */ } throw new Error(`GitHub respondió ${r.status}${m ? `: ${m}` : ''}`); }
-  return r.json();
+export function useSessionState(key, init) {
+  const [v, setV] = useState(() => {
+    try { const s = sessionStorage.getItem(key); if (s) return JSON.parse(s); } catch { /* */ }
+    return typeof init === 'function' ? init() : init;
+  });
+  useEffect(() => { try { sessionStorage.setItem(key, JSON.stringify(v)); } catch { /* */ } }, [key, v]);
+  return [v, setV];
+}
+
+// Envuelve un estado con deshacer y rehacer. Los cambios seguidos (como arrastrar) se agrupan en un solo paso.
+export function useUndoable([value, setValue]) {
+  const past = useRef([]);
+  const future = useRef([]);
+  const last = useRef(0);
+  const [, force] = useState(0);
+  const set = (updater) => {
+    setValue((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (next === prev) return prev;
+      const now = Date.now();
+      if (now - last.current > 600) { past.current.push(prev); if (past.current.length > 60) past.current.shift(); }
+      last.current = now;
+      future.current = [];
+      return next;
+    });
+    force((n) => n + 1);
+  };
+  const undo = () => {
+    if (!past.current.length) return;
+    setValue((cur) => { future.current.push(cur); return past.current.pop(); });
+    last.current = 0; force((n) => n + 1);
+  };
+  const redo = () => {
+    if (!future.current.length) return;
+    setValue((cur) => { past.current.push(cur); return future.current.pop(); });
+    last.current = 0; force((n) => n + 1);
+  };
+  return { value, set, undo, redo, canUndo: past.current.length > 0, canRedo: future.current.length > 0 };
 }

@@ -67,3 +67,50 @@ export function Progress({ value, max, label }) {
     </div>
   );
 }
+
+export function ImagePicker({ src, onPick, onClear, label = 'Subir imagen', hint, error, checker }) {
+  const ref = useRef();
+  return (
+    <div className="imgpick">
+      <button type="button" className={`imgpick-box${src ? ' has' : ''}${checker ? ' checker' : ''}`} onClick={() => ref.current.click()}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) onPick(f); }}>
+        {src ? <img src={src} alt="" /> : <span><strong>{label}</strong><br />o arrastra el archivo aquí</span>}
+      </button>
+      <input ref={ref} type="file" hidden accept="image/png,image/jpeg,image/svg+xml,image/webp"
+        onChange={(e) => { const f = e.target.files[0]; e.target.value = ''; if (f) onPick(f); }} />
+      <div className="imgpick-actions">
+        {src && <button type="button" className="btn small" onClick={() => ref.current.click()}>Cambiar</button>}
+        {src && onClear && <button type="button" className="btn ghost small" onClick={onClear}>Quitar</button>}
+      </div>
+      {hint && <span className="hint">{hint}</span>}
+      {error && <span className="error small">{error}</span>}
+    </div>
+  );
+}
+
+export function Modal({ title, onClose, children, wide }) {
+  return (
+    <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`modal${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+        <div className="modal-head">
+          <h2>{title}</h2>
+          <button className="btn ghost" onClick={onClose} aria-label="Cerrar">Cerrar</button>
+        </div>
+        <div className="modal-body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+export function Confirm({ text, confirmLabel = 'Sí, continuar', onConfirm, onCancel, danger }) {
+  return (
+    <div className="confirm">
+      <p>{text}</p>
+      <div className="row">
+        <button className={`btn ${danger ? 'danger solid' : 'primary'}`} onClick={onConfirm}>{confirmLabel}</button>
+        <button className="btn ghost" onClick={onCancel}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
